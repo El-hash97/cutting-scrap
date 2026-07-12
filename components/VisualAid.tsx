@@ -9,15 +9,15 @@ import { useState } from "react";
  * (gagal dimuat), otomatis fallback ke gambar SVG bawaan agar UI tetap rapi.
  *
  * Taruh file gambar di:
- *   public/type-a.jpg   (gambar TYPE A / kuning)
- *   public/type-b.jpg   (gambar TYPE B / biru)
+ *   public/type-a.png   (gambar TYPE A / kuning)
+ *   public/type-b.png   (gambar TYPE B / biru)
  */
 
 type Variant = "A" | "B";
 
 const SRC: Record<Variant, string> = {
-  A: "/type-a.jpg",
-  B: "/type-b.jpg",
+  A: "/type-a.png",
+  B: "/type-b.png",
 };
 
 const IMV: Record<Variant, string> = {
