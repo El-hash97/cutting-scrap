@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { toJpeg } from "html-to-image";
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import {
@@ -16,6 +15,7 @@ import ShareCard from "@/components/ShareCard";
 import { useEntries } from "@/lib/hooks";
 import { statsByMp } from "@/lib/aggregate";
 import { fmtKg, fmtLembar } from "@/lib/calc";
+import { reportBlob, reportFilename } from "@/lib/reportImage";
 import type { Entry } from "@/lib/types";
 
 function shortDate(iso: string): string {
@@ -202,26 +202,22 @@ function ShareDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) 
   const [busy, setBusy] = useState<null | "jpg" | "wa">(null);
   const [error, setError] = useState<string | null>(null);
 
-  const filename = `laporan-${entry.namaMP.replace(/\s+/g, "-").toLowerCase()}-${entry.tanggal}.jpg`;
+  const filename = reportFilename(entry);
 
-  async function capture(): Promise<string> {
-    if (!ref.current) throw new Error("Kartu belum siap.");
-    return toJpeg(ref.current, {
-      quality: 0.96,
-      pixelRatio: 2,
-      backgroundColor: "#ffffff",
-    });
+  function triggerDownload(blob: Blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function download() {
     setError(null);
     setBusy("jpg");
     try {
-      const url = await capture();
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
+      triggerDownload(await reportBlob(entry));
     } catch {
       setError("Gagal membuat gambar. Coba lagi.");
     } finally {
@@ -236,8 +232,7 @@ function ShareDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) 
       entry.totalBerat
     )} kg / ${fmtLembar(entry.totalLembar)} lbr, kecepatan ${entry.kecepatan} lbr/mnt.`;
     try {
-      const url = await capture();
-      const blob = await (await fetch(url)).blob();
+      const blob = await reportBlob(entry);
       const file = new File([blob], filename, { type: "image/jpeg" });
       const nav = navigator as Navigator & {
         canShare?: (d: ShareData) => boolean;
@@ -246,10 +241,7 @@ function ShareDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) 
         await nav.share({ files: [file], text, title: "Laporan Cutting Scrap" });
       } else {
         // Fallback: unduh gambar lalu buka WhatsApp dengan teks ringkasan.
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
+        triggerDownload(blob);
         window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
       }
     } catch (e) {

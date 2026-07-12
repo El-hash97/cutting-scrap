@@ -53,6 +53,21 @@ export function computeMetrics(input: EntryInput): Metrics {
   const totalLembar = typeA + typeB;
   const totalBerat = round(beratA + beratB, 2);
 
+  // Tanpa jam mulai/selesai lengkap, durasi & kecepatan belum bisa dihitung.
+  if (!input.tanggal || !input.jamMulai || !input.jamSelesai) {
+    return {
+      beratA,
+      beratB,
+      totalLembar,
+      totalBerat,
+      durasiKotor: 0,
+      potonganIstirahat: 0,
+      durasiEfektif: 0,
+      kecepatan: 0,
+      lintasHari: false,
+    };
+  }
+
   const start = toDate(input.tanggal, input.jamMulai);
   let end = toDate(input.tanggal, input.jamSelesai);
 
