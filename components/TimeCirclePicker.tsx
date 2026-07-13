@@ -30,15 +30,13 @@ function parseValue(value: string): { hour: number; minute: number } | null {
   return { hour, minute };
 }
 
-function roundToStep(minute: number, step = 5): number {
-  return (Math.round(minute / step) * step) % 60;
-}
-
 function defaultDraft(value: string): { hour: number; minute: number } {
   const parsed = parseValue(value);
   if (parsed) return parsed;
   const now = new Date();
-  return { hour: now.getHours(), minute: roundToStep(now.getMinutes()) };
+  const totalMinutes = now.getHours() * 60 + now.getMinutes();
+  const rounded = Math.round(totalMinutes / 5) * 5;
+  return { hour: Math.floor(rounded / 60) % 24, minute: rounded % 60 };
 }
 
 /** Sudut tick index 0..11 dalam radian; index 0 = arah jam 12 (atas), searah jarum jam. */
@@ -175,7 +173,7 @@ function HourFace({ draftHour }: { draftHour: number }) {
             textAnchor="middle"
             dominantBaseline="central"
             className={`num text-sm ${active ? "font-bold" : ""}`}
-            fill={active ? "#fff" : "var(--foreground)"}
+            fill={active ? "var(--brand-contrast)" : "var(--foreground)"}
           >
             {i}
           </text>
@@ -192,7 +190,7 @@ function HourFace({ draftHour }: { draftHour: number }) {
             textAnchor="middle"
             dominantBaseline="central"
             className={`num text-xs ${active ? "font-bold" : ""}`}
-            fill={active ? "#fff" : "var(--muted)"}
+            fill={active ? "var(--brand-contrast)" : "var(--muted)"}
           >
             {i + 12}
           </text>
@@ -222,7 +220,7 @@ function MinuteFace({ draftMinute }: { draftMinute: number }) {
             textAnchor="middle"
             dominantBaseline="central"
             className={`num text-sm ${active ? "font-bold" : ""}`}
-            fill={active ? "#fff" : "var(--foreground)"}
+            fill={active ? "var(--brand-contrast)" : "var(--foreground)"}
           >
             {pad(i * 5)}
           </text>
