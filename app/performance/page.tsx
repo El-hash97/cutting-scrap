@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import {
@@ -198,11 +198,29 @@ export default function PerformancePage() {
 }
 
 function ShareDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const previewBoxRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [cardHeight, setCardHeight] = useState(0);
   const [busy, setBusy] = useState<null | "jpg" | "wa">(null);
   const [error, setError] = useState<string | null>(null);
 
   const filename = reportFilename(entry);
+
+  // Skalakan kartu preview (lebar asli 720px) agar selalu pas di lebar layar
+  // yang tersedia — tidak ada scroll horizontal/vertikal di HP. File JPG/WA
+  // yang dibagikan tetap dirender penuh 720px lewat lib/reportImage.ts.
+  useLayoutEffect(() => {
+    function measure() {
+      const availableWidth = previewBoxRef.current?.clientWidth ?? 720;
+      setScale(Math.min(1, availableWidth / 720));
+      setCardHeight(cardRef.current?.offsetHeight ?? 0);
+    }
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (previewBoxRef.current) ro.observe(previewBoxRef.current);
+    return () => ro.disconnect();
+  }, [entry]);
 
   function triggerDownload(blob: Blob) {
     const url = URL.createObjectURL(blob);
@@ -272,10 +290,17 @@ function ShareDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) 
           </button>
         </div>
 
-        {/* Preview kartu (di-scroll horizontal di layar kecil) */}
-        <div className="overflow-x-auto rounded-xl bg-surface-2 p-3">
-          <div ref={ref} className="mx-auto w-[720px] max-w-none">
-            <ShareCard entry={entry} />
+        {/* Preview kartu, diskalakan agar pas di lebar layar tanpa scroll */}
+        <div className="rounded-xl bg-surface-2 p-3">
+          <div ref={previewBoxRef} className="overflow-hidden">
+            <div style={{ height: cardHeight * scale }}>
+              <div
+                ref={cardRef}
+                style={{ width: 720, transform: `scale(${scale})`, transformOrigin: "top left" }}
+              >
+                <ShareCard entry={entry} />
+              </div>
+            </div>
           </div>
         </div>
 
