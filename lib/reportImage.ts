@@ -1,6 +1,7 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { fmtDurasi, fmtKg, fmtLembar } from "./calc";
+import { computeTimeline, fmtDurasi, fmtKg, fmtLembar } from "./calc";
+import type { TimelineData } from "./calc";
 import type { Entry } from "./types";
 
 /**
@@ -17,6 +18,7 @@ const INK = "#1c1917";
 const MUTED = "#6b6b66";
 const BRAND = "#f59e0b";
 const BRAND_INK = "#7c4a03";
+const BRAND_STRONG = "#d97706";
 const TYPE_A = "#d97706";
 const TYPE_B = "#0284c7";
 const LINE = "#ececea";
@@ -44,8 +46,13 @@ function roundRect(
   ctx.roundRect(x, y, w, h, r);
 }
 
+/** Tinggi blok timeline (judul + bar + label), termasuk gap sebelum footer. */
+const TIMELINE_BLOCK_H = 66;
+const TIMELINE_GAP = 18;
+
 export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
-  const H = 524;
+  const timeline = computeTimeline(entry);
+  const H = timeline ? 606 : 524;
   const canvas = document.createElement("canvas");
   canvas.width = W * SCALE;
   canvas.height = H * SCALE;
@@ -160,8 +167,15 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
     `${entry.kecepatan.toLocaleString("id-ID")} lbr/mnt`
   );
 
+  // ---- Jadwal kerja (timeline) ----
+  let fY = mY + mH + 18;
+  if (timeline) {
+    const tlY = mY + mH + 16;
+    drawTimeline(ctx, PAD, tlY, W - PAD * 2, timeline);
+    fY = tlY + TIMELINE_BLOCK_H + TIMELINE_GAP;
+  }
+
   // ---- Footer ----
-  const fY = mY + mH + 18;
   ctx.strokeStyle = LINE;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -236,6 +250,90 @@ function drawMetric(
   ctx.fillStyle = INK;
   ctx.font = `800 20px ${FONT}`;
   ctx.fillText(value, x + 16, y + 54);
+}
+
+/**
+ * Gambar bar Jam Mulai → Jam Selesai, dengan kotak highlight pada segmen
+ * istirahat yang beririsan (bila ada). Mengikuti tampilan ScheduleTimeline
+ * di ShareCard.tsx.
+ */
+function drawTimeline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  top: number,
+  w: number,
+  tl: TimelineData
+) {
+  ctx.textAlign = "left";
+  ctx.fillStyle = MUTED;
+  ctx.font = `600 12px ${FONT}`;
+  ctx.fillText("JADWAL KERJA", x, top + 12);
+
+  const barCenterY = top + 32;
+  const barH = 8;
+  ctx.fillStyle = "#f1f1ef";
+  roundRect(ctx, x, barCenterY - barH / 2, w, barH, 999);
+  ctx.fill();
+
+  const total = tl.end.getTime() - tl.start.getTime();
+  const pct = (d: Date) =>
+    total > 0
+      ? Math.min(1, Math.max(0, (d.getTime() - tl.start.getTime()) / total))
+      : 0;
+
+  if (tl.breakOverlap) {
+    const left = pct(tl.breakOverlap.start) * w;
+    const right = pct(tl.breakOverlap.end) * w;
+    const boxW = Math.max(8, right - left);
+    ctx.fillStyle = "rgba(245,158,11,0.18)";
+    roundRect(ctx, x + left, barCenterY - 8, boxW, 16, 6);
+    ctx.fill();
+    ctx.strokeStyle = BRAND_STRONG;
+    ctx.lineWidth = 2;
+    roundRect(ctx, x + left, barCenterY - 8, boxW, 16, 6);
+    ctx.stroke();
+  }
+
+  const labelY = barCenterY + 8 + 20;
+
+  // Jam mulai (kiri): "HH:mm" tebal + " Jam Mulai" muted.
+  ctx.textAlign = "left";
+  ctx.font = `700 13px ${FONT}`;
+  const startLabel = format(tl.start, "HH:mm");
+  ctx.fillStyle = INK;
+  ctx.fillText(startLabel, x, labelY);
+  const startW = ctx.measureText(startLabel).width;
+  ctx.font = `400 12px ${FONT}`;
+  ctx.fillStyle = MUTED;
+  ctx.fillText(" Jam Mulai", x + startW, labelY);
+
+  // Label istirahat, tengah.
+  if (tl.breakOverlap) {
+    ctx.textAlign = "center";
+    ctx.font = `400 12px ${FONT}`;
+    ctx.fillStyle = MUTED;
+    ctx.fillText(
+      `Istirahat ${format(tl.breakOverlap.start, "HH:mm")} - ${format(tl.breakOverlap.end, "HH:mm")}`,
+      x + w / 2,
+      labelY
+    );
+  }
+
+  // Jam selesai (kanan): "HH:mm" tebal + " Jam Selesai" muted, rata kanan.
+  const endLabel = format(tl.end, "HH:mm");
+  const suffix = " Jam Selesai";
+  ctx.font = `400 12px ${FONT}`;
+  const suffixW = ctx.measureText(suffix).width;
+  ctx.font = `700 13px ${FONT}`;
+  const endW = ctx.measureText(endLabel).width;
+  const rightEdge = x + w;
+  ctx.textAlign = "left";
+  ctx.fillStyle = INK;
+  ctx.font = `700 13px ${FONT}`;
+  ctx.fillText(endLabel, rightEdge - suffixW - endW, labelY);
+  ctx.fillStyle = MUTED;
+  ctx.font = `400 12px ${FONT}`;
+  ctx.fillText(suffix, rightEdge - suffixW, labelY);
 }
 
 /** Kanvas → Blob JPEG. */

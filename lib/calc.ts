@@ -22,6 +22,18 @@ export function toDate(tanggal: string, jam: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
 }
 
+/** Rentang waktu irisan antara dua interval (null bila tidak beririsan). */
+function rangesOverlap(
+  aStart: Date,
+  aEnd: Date,
+  bStart: Date,
+  bEnd: Date
+): { start: Date; end: Date } | null {
+  const start = new Date(Math.max(aStart.getTime(), bStart.getTime()));
+  const end = new Date(Math.min(aEnd.getTime(), bEnd.getTime()));
+  return end.getTime() > start.getTime() ? { start, end } : null;
+}
+
 /** Menit irisan antara dua rentang waktu (0 bila tidak beririsan). */
 function overlapMinutes(
   aStart: Date,
@@ -29,9 +41,41 @@ function overlapMinutes(
   bStart: Date,
   bEnd: Date
 ): number {
-  const start = Math.max(aStart.getTime(), bStart.getTime());
-  const end = Math.min(aEnd.getTime(), bEnd.getTime());
-  return end > start ? Math.round((end - start) / 60000) : 0;
+  const o = rangesOverlap(aStart, aEnd, bStart, bEnd);
+  return o ? Math.round((o.end.getTime() - o.start.getTime()) / 60000) : 0;
+}
+
+export type ShiftInput = Pick<EntryInput, "tanggal" | "jamMulai" | "jamSelesai" | "time">;
+
+/**
+ * Hitung rentang shift (termasuk lintas hari) & window istirahat mentah.
+ * Dipakai bersama oleh computeMetrics & computeTimeline agar aturan
+ * cross-day dan window istirahat punya satu sumber kebenaran.
+ */
+function computeShiftRange(input: ShiftInput): {
+  start: Date;
+  end: Date;
+  lintasHari: boolean;
+  breakStart: Date;
+  breakEnd: Date;
+} {
+  const start = toDate(input.tanggal, input.jamMulai);
+  let end = toDate(input.tanggal, input.jamSelesai);
+
+  // Lintas hari: selesai lebih awal/sama dari mulai → tambah 1 hari.
+  let lintasHari = false;
+  if (end.getTime() <= start.getTime()) {
+    end = addDays(end, 1);
+    lintasHari = true;
+  }
+
+  // Window istirahat diukur relatif terhadap tanggal mulai (tengah malam).
+  const midnight = toDate(input.tanggal, "00:00");
+  const win = BREAK_WINDOW[input.time];
+  const breakStart = new Date(midnight.getTime() + win.startMin * 60000);
+  const breakEnd = new Date(midnight.getTime() + win.endMin * 60000);
+
+  return { start, end, lintasHari, breakStart, breakEnd };
 }
 
 /** Bulatkan ke maksimal `d` desimal tanpa jejak nol. */
@@ -68,24 +112,9 @@ export function computeMetrics(input: EntryInput): Metrics {
     };
   }
 
-  const start = toDate(input.tanggal, input.jamMulai);
-  let end = toDate(input.tanggal, input.jamSelesai);
-
-  // Lintas hari: selesai lebih awal/sama dari mulai → tambah 1 hari.
-  let lintasHari = false;
-  if (end.getTime() <= start.getTime()) {
-    end = addDays(end, 1);
-    lintasHari = true;
-  }
+  const { start, end, lintasHari, breakStart, breakEnd } = computeShiftRange(input);
 
   const durasiKotor = Math.max(0, differenceInMinutes(end, start));
-
-  // Window istirahat diukur relatif terhadap tanggal mulai (tengah malam).
-  const midnight = toDate(input.tanggal, "00:00");
-  const win = BREAK_WINDOW[input.time];
-  const breakStart = new Date(midnight.getTime() + win.startMin * 60000);
-  const breakEnd = new Date(midnight.getTime() + win.endMin * 60000);
-
   const potonganIstirahat = overlapMinutes(start, end, breakStart, breakEnd);
   const durasiEfektif = Math.max(0, durasiKotor - potonganIstirahat);
 
@@ -103,6 +132,23 @@ export function computeMetrics(input: EntryInput): Metrics {
     kecepatan,
     lintasHari,
   };
+}
+
+export interface TimelineData {
+  start: Date;
+  end: Date;
+  /** Rentang waktu istirahat yang benar-benar beririsan dengan jam kerja. */
+  breakOverlap: { start: Date; end: Date } | null;
+}
+
+/**
+ * Hitung rentang shift & irisan jam istirahat untuk visualisasi timeline.
+ * Return null bila tanggal/jam belum lengkap.
+ */
+export function computeTimeline(input: ShiftInput): TimelineData | null {
+  if (!input.tanggal || !input.jamMulai || !input.jamSelesai) return null;
+  const { start, end, breakStart, breakEnd } = computeShiftRange(input);
+  return { start, end, breakOverlap: rangesOverlap(start, end, breakStart, breakEnd) };
 }
 
 /** Format angka kg: hilangkan desimal .0 (539 bukan 539.0). */

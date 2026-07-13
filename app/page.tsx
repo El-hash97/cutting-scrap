@@ -12,8 +12,9 @@ import {
 } from "@phosphor-icons/react";
 import VisualAid from "@/components/VisualAid";
 import TimeCirclePicker from "@/components/TimeCirclePicker";
+import WorkTimeline from "@/components/WorkTimeline";
 import { Button, Card, Field, inputClass, Segmented, StatTile } from "@/components/ui";
-import { computeMetrics, fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
+import { computeMetrics, computeTimeline, fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
 import { saveEntry } from "@/lib/storage";
 import { useMpNames } from "@/lib/hooks";
 import type { EntryInput, Shift, TimeOfDay } from "@/lib/types";
@@ -54,6 +55,8 @@ export default function InputPage() {
       } as EntryInput),
     [form, typeA, typeB]
   );
+
+  const timeline = useMemo(() => computeTimeline(form), [form]);
 
   const set = (patch: Partial<typeof form>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -281,6 +284,12 @@ export default function InputPage() {
                 ` · potongan istirahat ${metrics.potonganIstirahat} mnt`}
               .
             </p>
+
+            {timeline && (
+              <div className="border-t border-border pt-4">
+                <WorkTimeline {...timeline} />
+              </div>
+            )}
           </Card>
         </div>
       </form>

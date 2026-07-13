@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
+import { computeTimeline, fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
 import type { Entry } from "@/lib/types";
 
 /**
@@ -12,6 +12,7 @@ import type { Entry } from "@/lib/types";
 const INK = "#1c1917";
 const MUTED = "#6b6b66";
 const BRAND = "#f59e0b";
+const BRAND_STRONG = "#d97706";
 const TYPE_A = "#d97706";
 const TYPE_B = "#0284c7";
 const LINE = "#ececea";
@@ -113,6 +114,9 @@ export default function ShareCard({ entry }: { entry: Entry }) {
         />
       </div>
 
+      {/* Jadwal kerja (timeline) */}
+      <ScheduleTimeline entry={entry} />
+
       {/* Footer */}
       <div
         style={{
@@ -172,6 +176,81 @@ function Breakdown({
         {fmtKg(berat)} <span style={{ fontSize: 14, color: MUTED }}>kg</span>
       </div>
       <div style={{ fontSize: 13, color: MUTED }}>{fmtLembar(lembar)} lembar</div>
+    </div>
+  );
+}
+
+function ScheduleTimeline({ entry }: { entry: Entry }) {
+  const tl = computeTimeline(entry);
+  if (!tl) return null;
+
+  const total = tl.end.getTime() - tl.start.getTime();
+  const pct = (d: Date) =>
+    total > 0
+      ? Math.min(100, Math.max(0, ((d.getTime() - tl.start.getTime()) / total) * 100))
+      : 0;
+  const left = tl.breakOverlap ? pct(tl.breakOverlap.start) : 0;
+  const right = tl.breakOverlap ? pct(tl.breakOverlap.end) : 0;
+  const width = Math.max(1.5, right - left);
+
+  return (
+    <div style={{ padding: "0 28px 20px" }}>
+      <div style={{ fontSize: 12, color: MUTED, fontWeight: 600, marginBottom: 10 }}>
+        JADWAL KERJA
+      </div>
+      <div style={{ position: "relative", height: 18 }}>
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: "50%",
+            height: 8,
+            transform: "translateY(-50%)",
+            borderRadius: 999,
+            background: "#f1f1ef",
+          }}
+        />
+        {tl.breakOverlap && (
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              height: 16,
+              transform: "translateY(-50%)",
+              left: `${left}%`,
+              width: `${width}%`,
+              borderRadius: 8,
+              border: `2px solid ${BRAND_STRONG}`,
+              background: "rgba(245,158,11,0.18)",
+            }}
+          />
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: 8,
+          fontSize: 12,
+          color: MUTED,
+        }}
+      >
+        <span>
+          <span style={{ fontWeight: 700, color: INK }}>{format(tl.start, "HH:mm")}</span>{" "}
+          Jam Mulai
+        </span>
+        {tl.breakOverlap && (
+          <span>
+            Istirahat {format(tl.breakOverlap.start, "HH:mm")} -{" "}
+            {format(tl.breakOverlap.end, "HH:mm")}
+          </span>
+        )}
+        <span>
+          <span style={{ fontWeight: 700, color: INK }}>{format(tl.end, "HH:mm")}</span> Jam
+          Selesai
+        </span>
+      </div>
     </div>
   );
 }
