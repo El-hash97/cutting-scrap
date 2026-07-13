@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { Clock } from "@phosphor-icons/react";
 import { Button, inputClass } from "@/components/ui";
 
@@ -49,12 +50,31 @@ function tickPoint(index: number, radius: number): { x: number; y: number } {
   return { x: CENTER + radius * Math.cos(angle), y: CENTER + radius * Math.sin(angle) };
 }
 
+/** Ubah offset pointer (relatif titik tengah SVG) jadi index tick 0..11 terdekat. */
+function pointToIndex(dx: number, dy: number): number {
+  let angle = Math.atan2(dy, dx) + Math.PI / 2;
+  if (angle < 0) angle += Math.PI * 2;
+  return Math.round(angle / (Math.PI / 6)) % 12;
+}
+
+function pointToHour(dx: number, dy: number): number {
+  const index = pointToIndex(dx, dy);
+  const distance = Math.hypot(dx, dy);
+  const outer = distance >= (OUTER_R + INNER_R) / 2;
+  return outer ? index : index + 12;
+}
+
+function pointToMinute(dx: number, dy: number): number {
+  return pointToIndex(dx, dy) * 5;
+}
+
 export default function TimeCirclePicker({ id, value, onChange }: TimeCirclePickerProps) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"hour" | "minute">("hour");
   const [draftHour, setDraftHour] = useState(0);
   const [draftMinute, setDraftMinute] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
+  const draggingRef = useRef(false);
 
   function openDialog() {
     const draft = defaultDraft(value);
@@ -71,6 +91,42 @@ export default function TimeCirclePicker({ id, value, onChange }: TimeCirclePick
   function confirm() {
     onChange(`${pad(draftHour)}:${pad(draftMinute)}`);
     setOpen(false);
+  }
+
+  function pointerToOffset(clientX: number, clientY: number) {
+    const svg = svgRef.current;
+    if (!svg) return { dx: 0, dy: 0 };
+    const rect = svg.getBoundingClientRect();
+    const scale = SIZE / rect.width;
+    return { dx: (clientX - rect.left) * scale - CENTER, dy: (clientY - rect.top) * scale - CENTER };
+  }
+
+  function selectFromPoint(clientX: number, clientY: number) {
+    const { dx, dy } = pointerToOffset(clientX, clientY);
+    if (step === "hour") {
+      setDraftHour(pointToHour(dx, dy));
+    } else {
+      setDraftMinute(pointToMinute(dx, dy));
+    }
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<SVGSVGElement>) {
+    e.preventDefault();
+    draggingRef.current = true;
+    selectFromPoint(e.clientX, e.clientY);
+
+    function onMove(ev: PointerEvent) {
+      if (!draggingRef.current) return;
+      selectFromPoint(ev.clientX, ev.clientY);
+    }
+    function onUp() {
+      draggingRef.current = false;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      setStep((s) => (s === "hour" ? "minute" : s));
+    }
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   }
 
   useEffect(() => {
@@ -128,6 +184,7 @@ export default function TimeCirclePicker({ id, value, onChange }: TimeCirclePick
             <svg
               ref={svgRef}
               viewBox={`0 0 ${SIZE} ${SIZE}`}
+              onPointerDown={handlePointerDown}
               className="mx-auto block aspect-square w-full max-w-[240px] touch-none select-none"
             >
               {step === "hour" ? (
