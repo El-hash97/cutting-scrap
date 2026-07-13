@@ -75,6 +75,7 @@ export default function TimeCirclePicker({ id, value, onChange }: TimeCirclePick
   const [draftMinute, setDraftMinute] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
   const draggingRef = useRef(false);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   function openDialog() {
     const draft = defaultDraft(value);
@@ -85,6 +86,8 @@ export default function TimeCirclePicker({ id, value, onChange }: TimeCirclePick
   }
 
   function closeDialog() {
+    dragCleanupRef.current?.();
+    draggingRef.current = false;
     setOpen(false);
   }
 
@@ -123,8 +126,16 @@ export default function TimeCirclePicker({ id, value, onChange }: TimeCirclePick
       draggingRef.current = false;
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
+      dragCleanupRef.current = null;
       setStep((s) => (s === "hour" ? "minute" : s));
     }
+    function cleanup() {
+      draggingRef.current = false;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      dragCleanupRef.current = null;
+    }
+    dragCleanupRef.current = cleanup;
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
   }
