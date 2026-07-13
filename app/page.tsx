@@ -11,6 +11,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import VisualAid from "@/components/VisualAid";
+import TimeCirclePicker from "@/components/TimeCirclePicker";
 import { Button, Card, Field, inputClass, Segmented, StatTile } from "@/components/ui";
 import { computeMetrics, fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
 import { saveEntry } from "@/lib/storage";
@@ -180,12 +181,10 @@ export default function InputPage() {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Jam Mulai" htmlFor="jamMulai" error={errors.jamMulai}>
-              <input
+              <TimeCirclePicker
                 id="jamMulai"
-                type="time"
-                className={inputClass}
                 value={form.jamMulai}
-                onChange={(e) => set({ jamMulai: e.target.value })}
+                onChange={(v) => set({ jamMulai: v })}
               />
             </Field>
             <Field
@@ -194,12 +193,10 @@ export default function InputPage() {
               error={errors.jamSelesai}
               hint={metrics.lintasHari ? "Terdeteksi lintas hari (+1 hari)." : undefined}
             >
-              <input
+              <TimeCirclePicker
                 id="jamSelesai"
-                type="time"
-                className={inputClass}
                 value={form.jamSelesai}
-                onChange={(e) => set({ jamSelesai: e.target.value })}
+                onChange={(v) => set({ jamSelesai: v })}
               />
             </Field>
           </div>
