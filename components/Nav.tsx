@@ -1,18 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChartBar,
   ClockCounterClockwise,
   Gauge,
+  LockKey,
+  LockKeyOpen,
   PencilSimpleLine,
   Scissors,
 } from "@phosphor-icons/react";
 import { useRole } from "@/lib/hooks";
 import { setRole } from "@/lib/storage";
-import { Segmented } from "@/components/ui";
-import type { Role } from "@/lib/types";
+import LoginDialog from "@/components/LoginDialog";
 
 type Item = {
   href: string;
@@ -35,7 +37,16 @@ function isActive(pathname: string, href: string): boolean {
 export default function Nav() {
   const pathname = usePathname();
   const [role] = useRole();
+  const [loginOpen, setLoginOpen] = useState(false);
   const items = ITEMS.filter((i) => !i.supervisorOnly || role === "Supervisor");
+
+  function handleAuthClick() {
+    if (role === "Supervisor") {
+      setRole("Operator");
+    } else {
+      setLoginOpen(true);
+    }
+  }
 
   return (
     <>
@@ -76,18 +87,27 @@ export default function Nav() {
             })}
           </nav>
 
-          <div className="ml-auto w-[188px]">
-            <Segmented<Role>
-              value={role}
-              onChange={(v) => setRole(v)}
-              options={[
-                { value: "Operator", label: "Operator" },
-                { value: "Supervisor", label: "Supervisor" },
-              ]}
-            />
-          </div>
+          <button
+            type="button"
+            onClick={handleAuthClick}
+            title={role === "Supervisor" ? "Keluar dari mode Supervisor" : "Login Supervisor"}
+            aria-label={role === "Supervisor" ? "Keluar dari mode Supervisor" : "Login Supervisor"}
+            className={`ml-auto grid size-10 place-items-center rounded-xl border transition ${
+              role === "Supervisor"
+                ? "border-brand-strong bg-brand text-brand-contrast"
+                : "border-border bg-surface text-muted hover:bg-surface-2 hover:text-foreground"
+            }`}
+          >
+            {role === "Supervisor" ? (
+              <LockKeyOpen size={20} weight="bold" />
+            ) : (
+              <LockKey size={20} />
+            )}
+          </button>
         </div>
       </header>
+
+      <LoginDialog open={loginOpen} onClose={() => setLoginOpen(false)} />
 
       {/* Mobile bottom tab bar */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur md:hidden">
