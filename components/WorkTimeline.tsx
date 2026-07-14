@@ -2,6 +2,7 @@
 
 import { format } from "date-fns";
 import { PauseCircle } from "@phosphor-icons/react";
+import { hourTicks } from "@/lib/calc";
 import type { TimelineData } from "@/lib/calc";
 
 /**
@@ -20,12 +21,22 @@ export default function WorkTimeline({ start, end, breakOverlap }: TimelineData)
   const leftPct = breakOverlap ? pct(breakOverlap.start) : 0;
   const rightPct = breakOverlap ? pct(breakOverlap.end) : 0;
   const widthPct = Math.max(1.5, rightPct - leftPct);
+  const ticks = hourTicks(start, end);
 
   return (
     <div>
       <div className="relative h-9">
         {/* Track dasar */}
         <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-surface-2" />
+
+        {/* Tick jam bulat (seling 1 jam) */}
+        {ticks.map((t) => (
+          <div
+            key={t.getTime()}
+            className="absolute top-1/2 h-3 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
+            style={{ left: `${pct(t)}%` }}
+          />
+        ))}
 
         {breakOverlap && (
           <>
@@ -50,6 +61,20 @@ export default function WorkTimeline({ start, end, breakOverlap }: TimelineData)
           </>
         )}
       </div>
+
+      {ticks.length > 0 && (
+        <div className="relative h-3.5">
+          {ticks.map((t) => (
+            <span
+              key={t.getTime()}
+              className="num absolute -translate-x-1/2 text-[10px] text-muted"
+              style={{ left: `${pct(t)}%` }}
+            >
+              {format(t, "HH")}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="mt-1 flex items-start justify-between text-xs">
         <span className="num font-semibold text-foreground">

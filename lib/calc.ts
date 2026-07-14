@@ -151,6 +151,19 @@ export function computeTimeline(input: ShiftInput): TimelineData | null {
   return { start, end, breakOverlap: rangesOverlap(start, end, breakStart, breakEnd) };
 }
 
+/** Titik jam bulat (HH:00) di antara start & end (eksklusif), untuk skala per jam pada timeline. */
+export function hourTicks(start: Date, end: Date): Date[] {
+  const ticks: Date[] = [];
+  const t = new Date(start);
+  t.setMinutes(0, 0, 0);
+  if (t.getTime() <= start.getTime()) t.setHours(t.getHours() + 1);
+  while (t.getTime() < end.getTime()) {
+    ticks.push(new Date(t));
+    t.setHours(t.getHours() + 1);
+  }
+  return ticks;
+}
+
 /** Format angka kg: hilangkan desimal .0 (539 bukan 539.0). */
 export function fmtKg(n: number): string {
   return round(n, 1).toLocaleString("id-ID");

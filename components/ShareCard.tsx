@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { computeTimeline, fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
+import { computeTimeline, fmtDurasi, fmtKg, fmtLembar, hourTicks } from "@/lib/calc";
 import type { Entry } from "@/lib/types";
 
 /**
@@ -117,6 +117,9 @@ export default function ShareCard({ entry }: { entry: Entry }) {
       {/* Jadwal kerja (timeline) */}
       <ScheduleTimeline entry={entry} />
 
+      {/* Referensi bentuk & berat per lembar */}
+      <ReferenceImages />
+
       {/* Footer */}
       <div
         style={{
@@ -128,7 +131,7 @@ export default function ShareCard({ entry }: { entry: Entry }) {
           justifyContent: "space-between",
         }}
       >
-        <span>Cutting Scrap · Laporan Produksi V2</span>
+        <span>Cutting Scrap Report 2026</span>
         <span>Type A 3.5 kg/lbr · Type B 2.6 kg/lbr</span>
       </div>
     </div>
@@ -192,11 +195,12 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
   const left = tl.breakOverlap ? pct(tl.breakOverlap.start) : 0;
   const right = tl.breakOverlap ? pct(tl.breakOverlap.end) : 0;
   const width = Math.max(1.5, right - left);
+  const ticks = hourTicks(tl.start, tl.end);
 
   return (
     <div style={{ padding: "0 28px 20px" }}>
       <div style={{ fontSize: 12, color: MUTED, fontWeight: 600, marginBottom: 10 }}>
-        JADWAL KERJA
+        JAM KERJA
       </div>
       <div style={{ position: "relative", height: 18 }}>
         <div
@@ -211,6 +215,20 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
             background: "#f1f1ef",
           }}
         />
+        {ticks.map((t) => (
+          <div
+            key={t.getTime()}
+            style={{
+              position: "absolute",
+              left: `${pct(t)}%`,
+              top: "50%",
+              height: 12,
+              width: 1,
+              transform: "translate(-50%, -50%)",
+              background: LINE,
+            }}
+          />
+        ))}
         {tl.breakOverlap && (
           <div
             style={{
@@ -227,6 +245,25 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
           />
         )}
       </div>
+      {ticks.length > 0 && (
+        <div style={{ position: "relative", height: 14, marginTop: 4 }}>
+          {ticks.map((t) => (
+            <span
+              key={t.getTime()}
+              style={{
+                position: "absolute",
+                left: `${pct(t)}%`,
+                transform: "translateX(-50%)",
+                fontSize: 10,
+                color: MUTED,
+              }}
+            >
+              {format(t, "HH")}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div
         style={{
           display: "flex",
@@ -251,6 +288,41 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
           Selesai
         </span>
       </div>
+    </div>
+  );
+}
+
+function ReferenceImages() {
+  return (
+    <div style={{ padding: "0 28px 20px" }}>
+      <div style={{ fontSize: 12, color: MUTED, fontWeight: 600, marginBottom: 10 }}>
+        REFERENSI BENTUK &amp; BERAT PER LEMBAR
+      </div>
+      <div style={{ display: "flex", gap: 14 }}>
+        <ReferenceImage variant="A" />
+        <ReferenceImage variant="B" />
+      </div>
+    </div>
+  );
+}
+
+function ReferenceImage({ variant }: { variant: "A" | "B" }) {
+  const src = variant === "A" ? "/type-a.png" : "/type-b.png";
+  return (
+    <div
+      style={{
+        flex: 1,
+        borderRadius: 12,
+        overflow: "hidden",
+        border: `1px solid ${LINE}`,
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={`Referensi Type ${variant}`}
+        style={{ display: "block", width: "100%", height: "auto" }}
+      />
     </div>
   );
 }

@@ -132,13 +132,13 @@ export default function InputPage() {
       <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* Kiri: form */}
         <Card className="space-y-5 p-5">
-          <Field label="Nama MP" htmlFor="namaMP" error={errors.namaMP} hint="Ketik nama; rekomendasi muncul dari data sebelumnya.">
+          <Field label="Nama MP" htmlFor="namaMP" error={errors.namaMP} >
             <input
               id="namaMP"
               list="mp-names"
               autoComplete="off"
               className={inputClass}
-              placeholder="mis. Andi Saputra"
+              placeholder="Mr. El"
               value={form.namaMP}
               onChange={(e) => set({ namaMP: e.target.value })}
             />

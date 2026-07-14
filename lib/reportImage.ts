@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { computeTimeline, fmtDurasi, fmtKg, fmtLembar } from "./calc";
+import { computeTimeline, fmtDurasi, fmtKg, fmtLembar, hourTicks } from "./calc";
 import type { TimelineData } from "./calc";
 import type { Entry } from "./types";
 
@@ -46,13 +46,42 @@ function roundRect(
   ctx.roundRect(x, y, w, h, r);
 }
 
-/** Tinggi blok timeline (judul + bar + label), termasuk gap sebelum footer. */
-const TIMELINE_BLOCK_H = 66;
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Gagal memuat gambar: ${src}`));
+    img.src = src;
+  });
+}
+
+/** Tinggi blok timeline (judul + bar + tick jam + label), termasuk gap sebelum footer. */
+const TIMELINE_BLOCK_H = 86;
 const TIMELINE_GAP = 18;
 
-export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
+export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElement> {
   const timeline = computeTimeline(entry);
-  const H = timeline ? 606 : 524;
+  const [imgA, imgB] = await Promise.all([loadImage("/type-a.png"), loadImage("/type-b.png")]);
+
+  // ---- Layout Y (dihitung dulu, sebelum kanvas dibuat, agar tinggi kanvas pas). ----
+  const gap = 14;
+  const headerH = 96;
+  const chipY = headerH + 18;
+  const chipH = 48;
+  const totalY = chipY + chipH + 22;
+  const bY = totalY + 92;
+  const bH = 92;
+  const mY = bY + bH + 16;
+  const mH = 72;
+  const tlY = mY + mH + 16;
+  const fY = timeline ? tlY + TIMELINE_BLOCK_H + TIMELINE_GAP : mY + mH + 18;
+
+  const refImgW = (W - PAD * 2 - gap) / 2;
+  const refImgH = refImgW * (imgA.naturalHeight / imgA.naturalWidth);
+  const refImgY = fY + 20;
+  const footerY = refImgY + refImgH + 18;
+  const H = Math.ceil(footerY + 50);
+
   const canvas = document.createElement("canvas");
   canvas.width = W * SCALE;
   canvas.height = H * SCALE;
@@ -65,7 +94,6 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
   ctx.fillRect(0, 0, W, H);
 
   // ---- Header (amber) ----
-  const headerH = 96;
   ctx.fillStyle = BRAND;
   ctx.fillRect(0, 0, W, headerH);
 
@@ -85,8 +113,6 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
 
   // ---- Chips ----
   let cx = PAD;
-  const chipY = headerH + 18;
-  const chipH = 48;
   const chips: [string, string][] = [
     ["Shift", entry.shift],
     ["Waktu", entry.time],
@@ -115,7 +141,6 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
   }
 
   // ---- Total besar ----
-  const totalY = chipY + chipH + 22;
   ctx.fillStyle = MUTED;
   ctx.font = `600 13px ${FONT}`;
   ctx.fillText("TOTAL BERAT", PAD, totalY);
@@ -135,9 +160,6 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
   );
 
   // ---- Breakdown A / B ----
-  const bY = totalY + 92;
-  const bH = 92;
-  const gap = 14;
   const bW = (W - PAD * 2 - gap) / 2;
   drawBreakdown(ctx, PAD, bY, bW, bH, TYPE_A, "Type A", entry.typeA, entry.beratA);
   drawBreakdown(
@@ -153,8 +175,6 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
   );
 
   // ---- Metrik ----
-  const mY = bY + bH + 16;
-  const mH = 72;
   const mW = (W - PAD * 2 - gap) / 2;
   drawMetric(ctx, PAD, mY, mW, mH, "Durasi efektif", fmtDurasi(entry.durasiEfektif));
   drawMetric(
@@ -168,28 +188,53 @@ export function renderReportCanvas(entry: Entry): HTMLCanvasElement {
   );
 
   // ---- Jadwal kerja (timeline) ----
-  let fY = mY + mH + 18;
   if (timeline) {
-    const tlY = mY + mH + 16;
     drawTimeline(ctx, PAD, tlY, W - PAD * 2, timeline);
-    fY = tlY + TIMELINE_BLOCK_H + TIMELINE_GAP;
   }
+
+  // ---- Referensi bentuk & berat per lembar ----
+  ctx.textAlign = "left";
+  ctx.fillStyle = MUTED;
+  ctx.font = `600 12px ${FONT}`;
+  ctx.fillText("REFERENSI BENTUK & BERAT PER LEMBAR", PAD, fY + 12);
+  drawRoundedImage(ctx, imgA, PAD, refImgY, refImgW, refImgH, 12);
+  drawRoundedImage(ctx, imgB, PAD + refImgW + gap, refImgY, refImgW, refImgH, 12);
 
   // ---- Footer ----
   ctx.strokeStyle = LINE;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, fY);
-  ctx.lineTo(W, fY);
+  ctx.moveTo(0, footerY);
+  ctx.lineTo(W, footerY);
   ctx.stroke();
   ctx.fillStyle = MUTED;
   ctx.font = `400 12px ${FONT}`;
   ctx.textAlign = "left";
-  ctx.fillText("Cutting Scrap · Laporan Produksi V2", PAD, fY + 22);
+  ctx.fillText("Cutting Scrap · Laporan Produksi V2", PAD, footerY + 22);
   ctx.textAlign = "right";
-  ctx.fillText("Type A 3.5 kg/lbr · Type B 2.6 kg/lbr", W - PAD, fY + 22);
+  ctx.fillText("Type A 3.5 kg/lbr · Type B 2.6 kg/lbr", W - PAD, footerY + 22);
 
   return canvas;
+}
+
+function drawRoundedImage(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r);
+  ctx.clip();
+  ctx.drawImage(img, x, y, w, h);
+  ctx.restore();
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.stroke();
 }
 
 function drawBreakdown(
@@ -281,6 +326,18 @@ function drawTimeline(
       ? Math.min(1, Math.max(0, (d.getTime() - tl.start.getTime()) / total))
       : 0;
 
+  // Tick jam bulat (seling 1 jam).
+  const ticks = hourTicks(tl.start, tl.end);
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 1;
+  for (const t of ticks) {
+    const tx = x + pct(t) * w;
+    ctx.beginPath();
+    ctx.moveTo(tx, barCenterY - 6);
+    ctx.lineTo(tx, barCenterY + 6);
+    ctx.stroke();
+  }
+
   if (tl.breakOverlap) {
     const left = pct(tl.breakOverlap.start) * w;
     const right = pct(tl.breakOverlap.end) * w;
@@ -294,7 +351,18 @@ function drawTimeline(
     ctx.stroke();
   }
 
-  const labelY = barCenterY + 8 + 20;
+  // Angka jam di bawah tiap tick.
+  if (ticks.length > 0) {
+    const hourLabelY = barCenterY + 8 + 10;
+    ctx.textAlign = "center";
+    ctx.font = `400 10px ${FONT}`;
+    ctx.fillStyle = MUTED;
+    for (const t of ticks) {
+      ctx.fillText(format(t, "HH"), x + pct(t) * w, hourLabelY);
+    }
+  }
+
+  const labelY = barCenterY + 8 + (ticks.length > 0 ? 36 : 20);
 
   // Jam mulai (kiri): "HH:mm" tebal + " Jam Mulai" muted.
   ctx.textAlign = "left";
@@ -337,8 +405,8 @@ function drawTimeline(
 }
 
 /** Kanvas → Blob JPEG. */
-export function reportBlob(entry: Entry): Promise<Blob> {
-  const canvas = renderReportCanvas(entry);
+export async function reportBlob(entry: Entry): Promise<Blob> {
+  const canvas = await renderReportCanvas(entry);
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("toBlob gagal"))),
