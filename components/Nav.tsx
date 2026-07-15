@@ -60,7 +60,7 @@ export default function Nav() {
             <span className="hidden text-[15px] leading-tight sm:block">
               Cutting Scrap
               <span className="block text-xs font-medium text-muted">
-                Laporan Produksi V2
+                Report 2026
               </span>
             </span>
           </Link>

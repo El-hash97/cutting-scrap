@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cutting Scrap — Report 2026",
+  title: "Cutting Scrap Report 2026",
   description:
     "Pencatatan, pemantauan, dan pelaporan hasil cutting scrap. Kalkulasi otomatis, dashboard, dan laporan siap dibagikan.",
 };
