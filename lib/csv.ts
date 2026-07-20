@@ -14,6 +14,9 @@ const HEADERS = [
   "Berat A (kg)",
   "Berat B (kg)",
   "Total Berat (kg)",
+  "Potongan Istirahat (mnt)",
+  "Potongan Line Stop (mnt)",
+  "Detail Line Stop",
   "Durasi Efektif",
   "Kecepatan (lbr/mnt)",
 ];
@@ -39,6 +42,9 @@ export function entriesToCsv(entries: Entry[]): string {
       e.beratA,
       e.beratB,
       e.totalBerat,
+      e.potonganIstirahat,
+      e.potonganLineStop,
+      e.lineStops.map((ls) => `${ls.mulai}-${ls.selesai} ${ls.keterangan}`).join(" | "),
       fmtDurasi(e.durasiEfektif),
       e.kecepatan,
     ]

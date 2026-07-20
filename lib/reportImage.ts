@@ -1,7 +1,14 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { computeTimeline, fmtDurasi, fmtKg, fmtLembar, hourTicks } from "./calc";
-import type { TimelineData } from "./calc";
+import {
+  computeLineStopRows,
+  computeTimeline,
+  fmtDurasi,
+  fmtKg,
+  fmtLembar,
+  hourTicks,
+} from "./calc";
+import type { LineStopRow, TimelineData } from "./calc";
 import type { Entry } from "./types";
 
 /**
@@ -59,8 +66,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 const TIMELINE_BLOCK_H = 86;
 const TIMELINE_GAP = 18;
 
+/** Tinggi blok tabel line stop (judul + header tabel + N baris + gap sebelum footer). */
+const LS_TITLE_H = 20;
+const LS_HEADER_H = 26;
+const LS_ROW_H = 28;
+const LS_GAP = 18;
+
+function lineStopBlockHeight(rowCount: number): number {
+  if (rowCount === 0) return 0;
+  return LS_TITLE_H + LS_HEADER_H + rowCount * LS_ROW_H + LS_GAP;
+}
+
 export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElement> {
   const timeline = computeTimeline(entry);
+  const lineStopRows = computeLineStopRows(entry);
   const [imgA, imgB] = await Promise.all([loadImage("/type-a.png"), loadImage("/type-b.png")]);
 
   // ---- Layout Y (dihitung dulu, sebelum kanvas dibuat, agar tinggi kanvas pas). ----
@@ -74,7 +93,9 @@ export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElemen
   const mY = bY + bH + 16;
   const mH = 72;
   const tlY = mY + mH + 16;
-  const fY = timeline ? tlY + TIMELINE_BLOCK_H + TIMELINE_GAP : mY + mH + 18;
+  const afterTimelineY = timeline ? tlY + TIMELINE_BLOCK_H + TIMELINE_GAP : mY + mH + 18;
+  const lsY = afterTimelineY;
+  const fY = lsY + lineStopBlockHeight(lineStopRows.length);
 
   const refImgW = (W - PAD * 2 - gap) / 2;
   const refImgH = refImgW * (imgA.naturalHeight / imgA.naturalWidth);
@@ -187,9 +208,14 @@ export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElemen
     `${entry.kecepatan.toLocaleString("id-ID")} lbr/mnt`
   );
 
-  // ---- Jadwal kerja (timeline) ----
+  // ---- Jadwal kerja (timeline, tetap menampilkan jam istirahat) ----
   if (timeline) {
     drawTimeline(ctx, PAD, tlY, W - PAD * 2, timeline);
+  }
+
+  // ---- Tabel info line stop (terpisah dari timeline istirahat) ----
+  if (lineStopRows.length > 0) {
+    drawLineStopTable(ctx, PAD, lsY, W - PAD * 2, lineStopRows);
   }
 
   // ---- Referensi bentuk & berat per lembar ----
@@ -402,6 +428,86 @@ function drawTimeline(
   ctx.fillStyle = MUTED;
   ctx.font = `400 12px ${FONT}`;
   ctx.fillText(suffix, rightEdge - suffixW, labelY);
+}
+
+/** Potong teks dengan elipsis bila melebihi lebar maksimum. */
+function truncateText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + "…").width > maxW) {
+    t = t.slice(0, -1);
+  }
+  return t + "…";
+}
+
+/**
+ * Gambar tabel info line stop (Jam | Keterangan | Durasi), terpisah dari
+ * bar timeline istirahat. Tinggi tabel mengikuti jumlah baris.
+ */
+function drawLineStopTable(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  top: number,
+  w: number,
+  rows: LineStopRow[]
+) {
+  ctx.textAlign = "left";
+  ctx.fillStyle = MUTED;
+  ctx.font = `600 12px ${FONT}`;
+  ctx.fillText("LINE STOP", x, top + 12);
+
+  const tableTop = top + LS_TITLE_H;
+  const tableH = LS_HEADER_H + rows.length * LS_ROW_H;
+
+  // Header background.
+  ctx.fillStyle = CHIP_BG;
+  ctx.fillRect(x, tableTop, w, LS_HEADER_H);
+
+  const col1X = x + 14; // Jam
+  const col2X = x + 130; // Keterangan
+  const col3XRight = x + w - 14; // Durasi (rata kanan)
+
+  ctx.fillStyle = MUTED;
+  ctx.font = `600 10px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillText("JAM", col1X, tableTop + 17);
+  ctx.fillText("KETERANGAN", col2X, tableTop + 17);
+  ctx.textAlign = "right";
+  ctx.fillText("DURASI", col3XRight, tableTop + 17);
+
+  const maxKetW = col3XRight - 70 - col2X;
+  rows.forEach((r, i) => {
+    const rowY = tableTop + LS_HEADER_H + i * LS_ROW_H;
+    if (i > 0) {
+      ctx.strokeStyle = LINE;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, rowY);
+      ctx.lineTo(x + w, rowY);
+      ctx.stroke();
+    }
+    const textY = rowY + LS_ROW_H / 2 + 4;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = INK;
+    ctx.font = `700 12px ${FONT}`;
+    ctx.fillText(`${r.mulai}-${r.selesai}`, col1X, textY);
+
+    ctx.fillStyle = MUTED;
+    ctx.font = `400 12px ${FONT}`;
+    ctx.fillText(truncateText(ctx, r.keterangan || "-", maxKetW), col2X, textY);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = INK;
+    ctx.font = `600 12px ${FONT}`;
+    ctx.fillText(fmtDurasi(r.menit), col3XRight, textY);
+  });
+
+  // Border luar tabel.
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, tableTop, w, tableH, 10);
+  ctx.stroke();
 }
 
 /** Kanvas → Blob JPEG. */

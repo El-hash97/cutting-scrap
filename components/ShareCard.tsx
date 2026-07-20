@@ -1,6 +1,14 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { computeTimeline, fmtDurasi, fmtKg, fmtLembar, hourTicks } from "@/lib/calc";
+import type { CSSProperties } from "react";
+import {
+  computeLineStopRows,
+  computeTimeline,
+  fmtDurasi,
+  fmtKg,
+  fmtLembar,
+  hourTicks,
+} from "@/lib/calc";
 import type { Entry } from "@/lib/types";
 
 /**
@@ -116,6 +124,9 @@ export default function ShareCard({ entry }: { entry: Entry }) {
 
       {/* Jadwal kerja (timeline) */}
       <ScheduleTimeline entry={entry} />
+
+      {/* Tabel info line stop (terpisah dari timeline istirahat) */}
+      <LineStopSection entry={entry} />
 
       {/* Referensi bentuk & berat per lembar */}
       <ReferenceImages />
@@ -287,6 +298,59 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
           <span style={{ fontWeight: 700, color: INK }}>{format(tl.end, "HH:mm")}</span> Jam
           Selesai
         </span>
+      </div>
+    </div>
+  );
+}
+
+const th: CSSProperties = {
+  textAlign: "left",
+  padding: "8px 12px",
+  fontSize: 11,
+  fontWeight: 600,
+  color: MUTED,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+};
+
+const td: CSSProperties = {
+  padding: "10px 12px",
+  fontSize: 13,
+  verticalAlign: "top",
+};
+
+function LineStopSection({ entry }: { entry: Entry }) {
+  const rows = computeLineStopRows(entry);
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ padding: "0 28px 20px" }}>
+      <div style={{ fontSize: 12, color: MUTED, fontWeight: 600, marginBottom: 10 }}>
+        LINE STOP
+      </div>
+      <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#f5f5f4" }}>
+              <th style={th}>Jam</th>
+              <th style={th}>Keterangan</th>
+              <th style={{ ...th, textAlign: "right" }}>Durasi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: `1px solid ${LINE}` }}>
+                <td style={{ ...td, fontWeight: 700, color: INK, whiteSpace: "nowrap" }}>
+                  {r.mulai}-{r.selesai}
+                </td>
+                <td style={{ ...td, color: MUTED }}>{r.keterangan || "-"}</td>
+                <td style={{ ...td, textAlign: "right", fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {fmtDurasi(r.menit)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

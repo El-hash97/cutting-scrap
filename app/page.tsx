@@ -8,16 +8,26 @@ import {
   CheckCircle,
   FloppyDisk,
   Info,
+  Plus,
+  Trash,
   WarningCircle,
 } from "@phosphor-icons/react";
 import VisualAid from "@/components/VisualAid";
 import TimeCirclePicker from "@/components/TimeCirclePicker";
 import WorkTimeline from "@/components/WorkTimeline";
+import LineStopTable from "@/components/LineStopTable";
 import { Button, Card, Field, inputClass, Segmented, StatTile } from "@/components/ui";
-import { computeMetrics, computeTimeline, fmtDurasi, fmtKg, fmtLembar } from "@/lib/calc";
+import {
+  computeLineStopRows,
+  computeMetrics,
+  computeTimeline,
+  fmtDurasi,
+  fmtKg,
+  fmtLembar,
+} from "@/lib/calc";
 import { saveEntry } from "@/lib/storage";
 import { useMpNames } from "@/lib/hooks";
-import type { EntryInput, Shift, TimeOfDay } from "@/lib/types";
+import type { EntryInput, LineStop, Shift, TimeOfDay } from "@/lib/types";
 
 const EMPTY = {
   namaMP: "",
@@ -28,6 +38,7 @@ const EMPTY = {
   jamSelesai: "",
   typeA: "",
   typeB: "",
+  lineStops: [] as LineStop[],
 };
 
 export default function InputPage() {
@@ -57,11 +68,26 @@ export default function InputPage() {
   );
 
   const timeline = useMemo(() => computeTimeline(form), [form]);
+  const lineStopRows = useMemo(() => computeLineStopRows(form), [form]);
 
   const set = (patch: Partial<typeof form>) => {
     setForm((f) => ({ ...f, ...patch }));
     setSaved(null);
   };
+
+  function addLineStop() {
+    set({ lineStops: [...form.lineStops, { mulai: "", selesai: "", keterangan: "" }] });
+  }
+
+  function updateLineStop(index: number, patch: Partial<LineStop>) {
+    set({
+      lineStops: form.lineStops.map((ls, i) => (i === index ? { ...ls, ...patch } : ls)),
+    });
+  }
+
+  function removeLineStop(index: number) {
+    set({ lineStops: form.lineStops.filter((_, i) => i !== index) });
+  }
 
   function validate(): boolean {
     const e: Record<string, string> = {};
@@ -69,6 +95,11 @@ export default function InputPage() {
     if (!form.tanggal) e.tanggal = "Tanggal wajib diisi.";
     if (!form.jamMulai) e.jamMulai = "Jam mulai wajib diisi.";
     if (!form.jamSelesai) e.jamSelesai = "Jam selesai wajib diisi.";
+    form.lineStops.forEach((ls, i) => {
+      if (!ls.mulai) e[`lineStopMulai${i}`] = "Jam mulai wajib diisi.";
+      if (!ls.selesai) e[`lineStopSelesai${i}`] = "Jam selesai wajib diisi.";
+      if (!ls.keterangan.trim()) e[`lineStopKeterangan${i}`] = "Keterangan wajib diisi.";
+    });
     if (typeA <= 0 && typeB <= 0)
       e.hasil = "Isi minimal salah satu hasil (Type A atau Type B).";
     setErrors(e);
@@ -83,8 +114,8 @@ export default function InputPage() {
       nama: form.namaMP.trim(),
       total: `${fmtLembar(metrics.totalLembar)} lbr / ${fmtKg(metrics.totalBerat)} kg`,
     });
-    // Pertahankan nama/shift/time/tanggal, kosongkan hasil untuk entry berikutnya.
-    setForm((f) => ({ ...f, typeA: "", typeB: "" }));
+    // Pertahankan nama/shift/time/tanggal, kosongkan hasil & line stop untuk entry berikutnya.
+    setForm((f) => ({ ...f, typeA: "", typeB: "", lineStops: [] }));
     setErrors({});
     if (typeof window !== "undefined")
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -204,6 +235,77 @@ export default function InputPage() {
             </Field>
           </div>
 
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-foreground">Line Stop (opsional)</span>
+              <Button type="button" variant="secondary" onClick={addLineStop}>
+                <Plus size={16} weight="bold" /> Tambah Line Stop
+              </Button>
+            </div>
+
+            {form.lineStops.length === 0 && (
+              <p className="text-xs text-muted">
+                Tambahkan bila ada mesin/line berhenti di luar jam istirahat. Bisa lebih dari
+                satu kejadian.
+              </p>
+            )}
+
+            {form.lineStops.map((ls, i) => (
+              <div key={i} className="space-y-3 rounded-xl border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    Line Stop #{i + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeLineStop(i)}
+                    className="rounded-lg p-1.5 text-muted hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                    aria-label={`Hapus Line Stop #${i + 1}`}
+                  >
+                    <Trash size={16} weight="bold" />
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Mulai"
+                    htmlFor={`lsMulai${i}`}
+                    error={errors[`lineStopMulai${i}`]}
+                  >
+                    <TimeCirclePicker
+                      id={`lsMulai${i}`}
+                      value={ls.mulai}
+                      onChange={(v) => updateLineStop(i, { mulai: v })}
+                    />
+                  </Field>
+                  <Field
+                    label="Selesai"
+                    htmlFor={`lsSelesai${i}`}
+                    error={errors[`lineStopSelesai${i}`]}
+                  >
+                    <TimeCirclePicker
+                      id={`lsSelesai${i}`}
+                      value={ls.selesai}
+                      onChange={(v) => updateLineStop(i, { selesai: v })}
+                    />
+                  </Field>
+                </div>
+                <Field
+                  label="Keterangan"
+                  htmlFor={`lsKet${i}`}
+                  error={errors[`lineStopKeterangan${i}`]}
+                >
+                  <input
+                    id={`lsKet${i}`}
+                    className={inputClass}
+                    placeholder="mis. Mesin macet, ganti pisau"
+                    value={ls.keterangan}
+                    onChange={(e) => updateLineStop(i, { keterangan: e.target.value })}
+                  />
+                </Field>
+              </div>
+            ))}
+          </div>
+
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Type A (lembar)" htmlFor="typeA">
               <input
@@ -281,13 +383,21 @@ export default function InputPage() {
             <p className="text-xs text-muted">
               Durasi kotor {fmtDurasi(metrics.durasiKotor)}
               {metrics.potonganIstirahat > 0 &&
-                ` · potongan istirahat ${metrics.potonganIstirahat} mnt`}
+                ` · istirahat ${metrics.potonganIstirahat} mnt`}
+              {metrics.potonganLineStop > 0 &&
+                ` · line stop ${metrics.potonganLineStop} mnt (${lineStopRows.length}x)`}
               .
             </p>
 
             {timeline && (
               <div className="border-t border-border pt-4">
                 <WorkTimeline {...timeline} />
+              </div>
+            )}
+
+            {lineStopRows.length > 0 && (
+              <div className="border-t border-border pt-4">
+                <LineStopTable rows={lineStopRows} />
               </div>
             )}
           </Card>
