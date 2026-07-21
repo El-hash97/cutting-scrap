@@ -2,6 +2,7 @@ import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import type { CSSProperties } from "react";
 import {
+  BREAK_LABELS,
   computeLineStopRows,
   computeTimeline,
   fmtDurasi,
@@ -9,7 +10,8 @@ import {
   fmtLembar,
   hourTicks,
 } from "@/lib/calc";
-import type { Entry } from "@/lib/types";
+import { getBreakConfig } from "@/lib/storage";
+import type { BreakKey, Entry } from "@/lib/types";
 
 /**
  * Kartu laporan digital untuk di-export jadi JPG & dibagikan ke WhatsApp.
@@ -24,6 +26,14 @@ const BRAND_STRONG = "#d97706";
 const TYPE_A = "#d97706";
 const TYPE_B = "#0284c7";
 const LINE = "#ececea";
+const LINE_STOP = "#dc2626";
+
+/** Warna kotak highlight per jenis jeda baku (istirahat/wakom) — seragam kuning/brand. */
+const BREAK_COLOR: Record<BreakKey, string> = {
+  istirahat: BRAND_STRONG,
+  wakom1: BRAND_STRONG,
+  wakom2: BRAND_STRONG,
+};
 
 function tanggalPanjang(iso: string): string {
   try {
@@ -86,8 +96,9 @@ export default function ShareCard({ entry }: { entry: Entry }) {
           {fmtKg(entry.totalBerat)}{" "}
           <span style={{ fontSize: 22, fontWeight: 700, color: MUTED }}>kg</span>
         </div>
-        <div style={{ fontSize: 15, color: MUTED, marginTop: 2 }}>
-          {fmtLembar(entry.totalLembar)} lembar total
+        <div style={{ fontSize: 18, fontWeight: 800, color: INK, marginTop: 4 }}>
+          {fmtLembar(entry.totalLembar)}{" "}
+          <span style={{ fontSize: 14, fontWeight: 600, color: MUTED }}>lembar total</span>
         </div>
       </div>
 
@@ -189,13 +200,15 @@ function Breakdown({
       <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2 }}>
         {fmtKg(berat)} <span style={{ fontSize: 14, color: MUTED }}>kg</span>
       </div>
-      <div style={{ fontSize: 13, color: MUTED }}>{fmtLembar(lembar)} lembar</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: INK, marginTop: 2 }}>
+        {fmtLembar(lembar)} <span style={{ fontSize: 13, fontWeight: 600, color: MUTED }}>lembar</span>
+      </div>
     </div>
   );
 }
 
 function ScheduleTimeline({ entry }: { entry: Entry }) {
-  const tl = computeTimeline(entry);
+  const tl = computeTimeline(entry, getBreakConfig());
   if (!tl) return null;
 
   const total = tl.end.getTime() - tl.start.getTime();
@@ -203,9 +216,6 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
     total > 0
       ? Math.min(100, Math.max(0, ((d.getTime() - tl.start.getTime()) / total) * 100))
       : 0;
-  const left = tl.breakOverlap ? pct(tl.breakOverlap.start) : 0;
-  const right = tl.breakOverlap ? pct(tl.breakOverlap.end) : 0;
-  const width = Math.max(1.5, right - left);
   const ticks = hourTicks(tl.start, tl.end);
 
   return (
@@ -240,21 +250,49 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
             }}
           />
         ))}
-        {tl.breakOverlap && (
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              height: 16,
-              transform: "translateY(-50%)",
-              left: `${left}%`,
-              width: `${width}%`,
-              borderRadius: 8,
-              border: `2px solid ${BRAND_STRONG}`,
-              background: "rgba(245,158,11,0.18)",
-            }}
-          />
-        )}
+        {tl.breakOverlaps.map((b, i) => {
+          const l = pct(b.start);
+          const r = pct(b.end);
+          const w = Math.max(1.5, r - l);
+          const color = BREAK_COLOR[b.key];
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                top: "50%",
+                height: 16,
+                transform: "translateY(-50%)",
+                left: `${l}%`,
+                width: `${w}%`,
+                borderRadius: 8,
+                border: `2px solid ${color}`,
+                background: `${color}2e`,
+              }}
+            />
+          );
+        })}
+        {tl.lineStopOverlaps.map((ls, i) => {
+          const l = pct(ls.start);
+          const r = pct(ls.end);
+          const w = Math.max(1.5, r - l);
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                top: "50%",
+                height: 16,
+                transform: "translateY(-50%)",
+                left: `${l}%`,
+                width: `${w}%`,
+                borderRadius: 8,
+                border: `2px solid ${LINE_STOP}`,
+                background: "rgba(220,38,38,0.14)",
+              }}
+            />
+          );
+        })}
       </div>
       {ticks.length > 0 && (
         <div style={{ position: "relative", height: 14, marginTop: 4 }}>
@@ -288,17 +326,34 @@ function ScheduleTimeline({ entry }: { entry: Entry }) {
           <span style={{ fontWeight: 700, color: INK }}>{format(tl.start, "HH:mm")}</span>{" "}
           Jam Mulai
         </span>
-        {tl.breakOverlap && (
-          <span>
-            Istirahat {format(tl.breakOverlap.start, "HH:mm")} -{" "}
-            {format(tl.breakOverlap.end, "HH:mm")}
-          </span>
-        )}
         <span>
           <span style={{ fontWeight: 700, color: INK }}>{format(tl.end, "HH:mm")}</span> Jam
           Selesai
         </span>
       </div>
+
+      {(tl.breakOverlaps.length > 0 || tl.lineStopOverlaps.length > 0) && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "2px 12px",
+            marginTop: 6,
+            fontSize: 12,
+          }}
+        >
+          {tl.breakOverlaps.map((b, i) => (
+            <span key={`b${i}`} style={{ color: BREAK_COLOR[b.key] }}>
+              {BREAK_LABELS[b.key]} {format(b.start, "HH:mm")}-{format(b.end, "HH:mm")}
+            </span>
+          ))}
+          {tl.lineStopOverlaps.map((ls, i) => (
+            <span key={`ls${i}`} style={{ color: LINE_STOP }}>
+              Line stop {format(ls.start, "HH:mm")}-{format(ls.end, "HH:mm")}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

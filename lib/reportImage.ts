@@ -1,6 +1,7 @@
 import { format, parseISO } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import {
+  BREAK_LABELS,
   computeLineStopRows,
   computeTimeline,
   fmtDurasi,
@@ -8,8 +9,9 @@ import {
   fmtLembar,
   hourTicks,
 } from "./calc";
+import { getBreakConfig } from "./storage";
 import type { LineStopRow, TimelineData } from "./calc";
-import type { Entry } from "./types";
+import type { BreakKey, Entry } from "./types";
 
 /**
  * Render kartu laporan langsung ke <canvas> (bukan lewat DOM-to-image).
@@ -29,9 +31,17 @@ const BRAND_STRONG = "#d97706";
 const TYPE_A = "#d97706";
 const TYPE_B = "#0284c7";
 const LINE = "#ececea";
+const LINE_STOP = "#dc2626";
 const CHIP_BG = "#f5f5f4";
 const METRIC_BG = "#faf7ef";
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
+/** Warna kotak highlight per jenis jeda baku (istirahat/wakom) — seragam kuning/brand. */
+const BREAK_COLOR: Record<BreakKey, string> = {
+  istirahat: BRAND_STRONG,
+  wakom1: BRAND_STRONG,
+  wakom2: BRAND_STRONG,
+};
 
 function tanggalPanjang(iso: string): string {
   try {
@@ -65,6 +75,8 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 /** Tinggi blok timeline (judul + bar + tick jam + label), termasuk gap sebelum footer. */
 const TIMELINE_BLOCK_H = 86;
 const TIMELINE_GAP = 18;
+/** Tinggi tambahan untuk baris label istirahat/wakom/line stop di bawah timeline (bila ada). */
+const EXTRA_LABEL_ROW_H = 18;
 
 /** Tinggi blok tabel line stop (judul + header tabel + N baris + gap sebelum footer). */
 const LS_TITLE_H = 20;
@@ -78,7 +90,7 @@ function lineStopBlockHeight(rowCount: number): number {
 }
 
 export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElement> {
-  const timeline = computeTimeline(entry);
+  const timeline = computeTimeline(entry, getBreakConfig());
   const lineStopRows = computeLineStopRows(entry);
   const [imgA, imgB] = await Promise.all([loadImage("/type-a.png"), loadImage("/type-b.png")]);
 
@@ -93,7 +105,11 @@ export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElemen
   const mY = bY + bH + 16;
   const mH = 72;
   const tlY = mY + mH + 16;
-  const afterTimelineY = timeline ? tlY + TIMELINE_BLOCK_H + TIMELINE_GAP : mY + mH + 18;
+  const hasExtraLabelRow =
+    !!timeline && (timeline.breakOverlaps.length > 0 || timeline.lineStopOverlaps.length > 0);
+  const afterTimelineY = timeline
+    ? tlY + TIMELINE_BLOCK_H + (hasExtraLabelRow ? EXTRA_LABEL_ROW_H : 0) + TIMELINE_GAP
+    : mY + mH + 18;
   const lsY = afterTimelineY;
   const fY = lsY + lineStopBlockHeight(lineStopRows.length);
 
@@ -173,12 +189,14 @@ export async function renderReportCanvas(entry: Entry): Promise<HTMLCanvasElemen
   ctx.fillStyle = MUTED;
   ctx.font = `700 22px ${FONT}`;
   ctx.fillText("kg", PAD + bigW + 10, totalY + 46);
-  ctx.font = `400 15px ${FONT}`;
-  ctx.fillText(
-    `${fmtLembar(entry.totalLembar)} lembar total`,
-    PAD,
-    totalY + 70
-  );
+  const totalLembarVal = fmtLembar(entry.totalLembar);
+  ctx.fillStyle = INK;
+  ctx.font = `800 18px ${FONT}`;
+  ctx.fillText(totalLembarVal, PAD, totalY + 72);
+  const totalLembarW = ctx.measureText(totalLembarVal).width;
+  ctx.fillStyle = MUTED;
+  ctx.font = `600 14px ${FONT}`;
+  ctx.fillText(" lembar total", PAD + totalLembarW, totalY + 72);
 
   // ---- Breakdown A / B ----
   const bW = (W - PAD * 2 - gap) / 2;
@@ -299,7 +317,15 @@ function drawBreakdown(
   ctx.fillStyle = MUTED;
   ctx.font = `400 14px ${FONT}`;
   ctx.fillText("kg", tx + vw + 6, y + 54);
-  ctx.fillText(`${fmtLembar(lembar)} lembar`, tx, y + 76);
+
+  const lembarVal = fmtLembar(lembar);
+  ctx.fillStyle = INK;
+  ctx.font = `700 16px ${FONT}`;
+  ctx.fillText(lembarVal, tx, y + 78);
+  const lembarW = ctx.measureText(lembarVal).width;
+  ctx.fillStyle = MUTED;
+  ctx.font = `600 13px ${FONT}`;
+  ctx.fillText(" lembar", tx + lembarW, y + 78);
 }
 
 function drawMetric(
@@ -325,8 +351,8 @@ function drawMetric(
 
 /**
  * Gambar bar Jam Mulai → Jam Selesai, dengan kotak highlight pada segmen
- * istirahat yang beririsan (bila ada). Mengikuti tampilan ScheduleTimeline
- * di ShareCard.tsx.
+ * istirahat/wakom & line stop yang beririsan (bila ada). Mengikuti tampilan
+ * ScheduleTimeline di ShareCard.tsx.
  */
 function drawTimeline(
   ctx: CanvasRenderingContext2D,
@@ -364,14 +390,28 @@ function drawTimeline(
     ctx.stroke();
   }
 
-  if (tl.breakOverlap) {
-    const left = pct(tl.breakOverlap.start) * w;
-    const right = pct(tl.breakOverlap.end) * w;
+  for (const b of tl.breakOverlaps) {
+    const left = pct(b.start) * w;
+    const right = pct(b.end) * w;
     const boxW = Math.max(8, right - left);
-    ctx.fillStyle = "rgba(245,158,11,0.18)";
+    const color = BREAK_COLOR[b.key];
+    ctx.fillStyle = `${color}2e`;
     roundRect(ctx, x + left, barCenterY - 8, boxW, 16, 6);
     ctx.fill();
-    ctx.strokeStyle = BRAND_STRONG;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    roundRect(ctx, x + left, barCenterY - 8, boxW, 16, 6);
+    ctx.stroke();
+  }
+
+  for (const ls of tl.lineStopOverlaps) {
+    const left = pct(ls.start) * w;
+    const right = pct(ls.end) * w;
+    const boxW = Math.max(8, right - left);
+    ctx.fillStyle = "rgba(220,38,38,0.14)";
+    roundRect(ctx, x + left, barCenterY - 8, boxW, 16, 6);
+    ctx.fill();
+    ctx.strokeStyle = LINE_STOP;
     ctx.lineWidth = 2;
     roundRect(ctx, x + left, barCenterY - 8, boxW, 16, 6);
     ctx.stroke();
@@ -401,18 +441,6 @@ function drawTimeline(
   ctx.fillStyle = MUTED;
   ctx.fillText(" Jam Mulai", x + startW, labelY);
 
-  // Label istirahat, tengah.
-  if (tl.breakOverlap) {
-    ctx.textAlign = "center";
-    ctx.font = `400 12px ${FONT}`;
-    ctx.fillStyle = MUTED;
-    ctx.fillText(
-      `Istirahat ${format(tl.breakOverlap.start, "HH:mm")} - ${format(tl.breakOverlap.end, "HH:mm")}`,
-      x + w / 2,
-      labelY
-    );
-  }
-
   // Jam selesai (kanan): "HH:mm" tebal + " Jam Selesai" muted, rata kanan.
   const endLabel = format(tl.end, "HH:mm");
   const suffix = " Jam Selesai";
@@ -428,6 +456,61 @@ function drawTimeline(
   ctx.fillStyle = MUTED;
   ctx.font = `400 12px ${FONT}`;
   ctx.fillText(suffix, rightEdge - suffixW, labelY);
+
+  // Baris label istirahat/wakom/line stop, di bawah label jam mulai/selesai.
+  if (tl.breakOverlaps.length > 0 || tl.lineStopOverlaps.length > 0) {
+    const chips = [
+      ...tl.breakOverlaps.map((b) => ({
+        text: `${BREAK_LABELS[b.key]} ${format(b.start, "HH:mm")}-${format(b.end, "HH:mm")}`,
+        color: BREAK_COLOR[b.key],
+      })),
+      ...tl.lineStopOverlaps.map((ls) => ({
+        text: `Line stop ${format(ls.start, "HH:mm")}-${format(ls.end, "HH:mm")}`,
+        color: LINE_STOP,
+      })),
+    ];
+    drawLabelChips(ctx, x, labelY + EXTRA_LABEL_ROW_H, w, chips);
+  }
+}
+
+/**
+ * Gambar deretan label berwarna (mis. "Istirahat 11:00-13:00") sejajar
+ * horizontal, berhenti + elipsis bila kepanjangan (canvas tidak wrap teks
+ * otomatis seperti DOM).
+ */
+function drawLabelChips(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  maxW: number,
+  chips: { text: string; color: string }[]
+) {
+  ctx.textAlign = "left";
+  ctx.font = `400 12px ${FONT}`;
+  const sepW = ctx.measureText(", ").width;
+  const ellipsisW = ctx.measureText("…").width;
+  let cx = x;
+  for (let i = 0; i < chips.length; i++) {
+    const chip = chips[i];
+    const isLast = i === chips.length - 1;
+    const chipW = ctx.measureText(chip.text).width;
+    const needed = chipW + (isLast ? 0 : sepW);
+    if (cx + needed > x + maxW && cx !== x) {
+      if (cx + ellipsisW <= x + maxW) {
+        ctx.fillStyle = MUTED;
+        ctx.fillText("…", cx, y);
+      }
+      return;
+    }
+    ctx.fillStyle = chip.color;
+    ctx.fillText(chip.text, cx, y);
+    cx += chipW;
+    if (!isLast) {
+      ctx.fillStyle = MUTED;
+      ctx.fillText(", ", cx, y);
+      cx += sepW;
+    }
+  }
 }
 
 /** Potong teks dengan elipsis bila melebihi lebar maksimum. */

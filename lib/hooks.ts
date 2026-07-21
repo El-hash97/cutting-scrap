@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getEntries, getMpNames, getRole, subscribe } from "./storage";
-import type { Entry, Role } from "./types";
+import { DEFAULT_BREAK_CONFIG } from "./calc";
+import { getBreakConfig, getEntries, getMpNames, getRole, subscribe } from "./storage";
+import type { BreakConfig, Entry, Role } from "./types";
 
 /**
  * Baca sumber data localStorage secara reaktif.
@@ -35,4 +36,8 @@ export function useMpNames(): [string[], boolean] {
 
 export function useRole(): [Role, boolean] {
   return useStore<Role>(getRole, "Operator");
+}
+
+export function useBreakConfig(): [BreakConfig, boolean] {
+  return useStore<BreakConfig>(getBreakConfig, DEFAULT_BREAK_CONFIG);
 }

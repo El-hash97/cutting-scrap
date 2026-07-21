@@ -9,6 +9,18 @@ export interface LineStop {
   keterangan: string; // alasan/catatan line stop, diisi manual
 }
 
+/** Satu window waktu jeda (HH:mm - HH:mm), bisa diubah user lewat panel pengaturan. */
+export interface BreakWindow {
+  mulai: string; // HH:mm
+  selesai: string; // HH:mm
+}
+
+/** Kunci parameter jeda baku: istirahat + 2 waktu komunikasi (wakom). */
+export type BreakKey = "istirahat" | "wakom1" | "wakom2";
+
+/** Konfigurasi lengkap semua window jeda, per jenis waktu kerja (Day/Night). */
+export type BreakConfig = Record<BreakKey, Record<TimeOfDay, BreakWindow>>;
+
 /** Nilai input mentah dari operator (sebelum kalkulasi). */
 export interface EntryInput {
   namaMP: string;

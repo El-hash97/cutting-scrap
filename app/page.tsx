@@ -16,6 +16,7 @@ import VisualAid from "@/components/VisualAid";
 import TimeCirclePicker from "@/components/TimeCirclePicker";
 import WorkTimeline from "@/components/WorkTimeline";
 import LineStopTable from "@/components/LineStopTable";
+import BreakConfigPanel from "@/components/BreakConfigPanel";
 import { Button, Card, Field, inputClass, Segmented, StatTile } from "@/components/ui";
 import {
   computeLineStopRows,
@@ -26,7 +27,7 @@ import {
   fmtLembar,
 } from "@/lib/calc";
 import { saveEntry } from "@/lib/storage";
-import { useMpNames } from "@/lib/hooks";
+import { useBreakConfig, useMpNames } from "@/lib/hooks";
 import type { EntryInput, LineStop, Shift, TimeOfDay } from "@/lib/types";
 
 const EMPTY = {
@@ -48,6 +49,7 @@ export default function InputPage() {
     null
   );
   const [mpNames] = useMpNames();
+  const [breakConfig] = useBreakConfig();
 
   // Default tanggal = hari ini (di-set setelah mount agar tidak hydration-mismatch).
   useEffect(() => {
@@ -59,15 +61,18 @@ export default function InputPage() {
 
   const metrics = useMemo(
     () =>
-      computeMetrics({
-        ...form,
-        typeA,
-        typeB,
-      } as EntryInput),
-    [form, typeA, typeB]
+      computeMetrics(
+        {
+          ...form,
+          typeA,
+          typeB,
+        } as EntryInput,
+        breakConfig
+      ),
+    [form, typeA, typeB, breakConfig]
   );
 
-  const timeline = useMemo(() => computeTimeline(form), [form]);
+  const timeline = useMemo(() => computeTimeline(form, breakConfig), [form, breakConfig]);
   const lineStopRows = useMemo(() => computeLineStopRows(form), [form]);
 
   const set = (patch: Partial<typeof form>) => {
@@ -160,7 +165,7 @@ export default function InputPage() {
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px] lg:items-start">
         {/* Kiri: form */}
         <Card className="space-y-5 p-5">
           <Field label="Nama MP" htmlFor="namaMP" error={errors.namaMP} >
@@ -345,7 +350,7 @@ export default function InputPage() {
         </Card>
 
         {/* Kanan: ringkasan real-time (sticky di desktop) */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
+        <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
           <Card className="space-y-4 p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
               Ringkasan Otomatis
@@ -400,6 +405,10 @@ export default function InputPage() {
                 <LineStopTable rows={lineStopRows} />
               </div>
             )}
+          </Card>
+
+          <Card className="p-5">
+            <BreakConfigPanel config={breakConfig} defaultTime={form.time} />
           </Card>
         </div>
       </form>

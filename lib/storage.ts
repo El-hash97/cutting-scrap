@@ -1,9 +1,10 @@
-import { computeMetrics } from "./calc";
-import type { Entry, EntryInput, Role } from "./types";
+import { computeMetrics, DEFAULT_BREAK_CONFIG } from "./calc";
+import type { BreakConfig, Entry, EntryInput, Role } from "./types";
 
 const KEY_ENTRIES = "cs_entries";
 const KEY_NAMES = "cs_mp_names";
 const KEY_ROLE = "cs_role";
+const KEY_BREAK_CONFIG = "cs_break_config";
 
 /** Event yang di-dispatch setiap kali data berubah, agar UI ikut refresh. */
 const CHANGE_EVENT = "cs:change";
@@ -49,7 +50,7 @@ export function getEntries(): Entry[] {
 }
 
 export function saveEntry(input: EntryInput): Entry {
-  const metrics = computeMetrics(input);
+  const metrics = computeMetrics(input, getBreakConfig());
   const entry: Entry = {
     ...input,
     ...metrics,
@@ -106,4 +107,24 @@ export function getRole(): Role {
 
 export function setRole(role: Role): void {
   write(KEY_ROLE, role);
+}
+
+// ---- Konfigurasi jeda (istirahat & wakom) ------------------------------------
+
+/** Baca konfigurasi jeda; fallback per-kunci ke default agar tahan skema baru. */
+export function getBreakConfig(): BreakConfig {
+  const stored = read<Partial<BreakConfig>>(KEY_BREAK_CONFIG, {});
+  return {
+    istirahat: { ...DEFAULT_BREAK_CONFIG.istirahat, ...stored.istirahat },
+    wakom1: { ...DEFAULT_BREAK_CONFIG.wakom1, ...stored.wakom1 },
+    wakom2: { ...DEFAULT_BREAK_CONFIG.wakom2, ...stored.wakom2 },
+  };
+}
+
+export function setBreakConfig(config: BreakConfig): void {
+  write(KEY_BREAK_CONFIG, config);
+}
+
+export function resetBreakConfig(): void {
+  write(KEY_BREAK_CONFIG, DEFAULT_BREAK_CONFIG);
 }

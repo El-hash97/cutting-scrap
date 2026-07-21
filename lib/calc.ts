@@ -1,5 +1,5 @@
 import { addDays, differenceInMinutes } from "date-fns";
-import type { EntryInput, LineStop, Metrics, TimeOfDay } from "./types";
+import type { BreakConfig, BreakKey, BreakWindow, EntryInput, LineStop, Metrics, TimeOfDay } from "./types";
 
 /** Berat per lembar (kg). Sesuai gambar referensi & PRD. */
 export const BERAT_PER_LEMBAR = {
@@ -7,13 +7,50 @@ export const BERAT_PER_LEMBAR = {
   B: 2.6,
 } as const;
 
-/** Window istirahat per jenis waktu kerja (menit dari tengah malam). */
-const BREAK_WINDOW: Record<TimeOfDay, { startMin: number; endMin: number }> = {
-  // 11:00 - 13:00
-  Day: { startMin: 11 * 60, endMin: 13 * 60 },
-  // 23:00 - 01:00 (melintasi tengah malam → endMin > 24 jam)
-  Night: { startMin: 23 * 60, endMin: 25 * 60 },
+/** Label tampilan untuk tiap kunci parameter jeda. */
+export const BREAK_LABELS: Record<BreakKey, string> = {
+  istirahat: "Istirahat",
+  wakom1: "Wakom 1",
+  wakom2: "Wakom 2",
 };
+
+/** Konfigurasi jeda baku (istirahat & waktu komunikasi), bisa diubah user lewat panel pengaturan. */
+export const DEFAULT_BREAK_CONFIG: BreakConfig = {
+  istirahat: {
+    Day: { mulai: "11:00", selesai: "13:00" },
+    Night: { mulai: "23:00", selesai: "00:30" },
+  },
+  wakom1: {
+    Day: { mulai: "09:30", selesai: "09:40" },
+    Night: { mulai: "22:00", selesai: "22:10" },
+  },
+  wakom2: {
+    Day: { mulai: "14:00", selesai: "14:10" },
+    Night: { mulai: "02:30", selesai: "02:40" },
+  },
+};
+
+function hmToMinutes(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
+ * Ubah satu window HH:mm jadi rentang menit-dari-tengah-malam `tanggal`.
+ * Night: jam dini hari (00:00-11:59) dianggap bagian shift yang lintas ke
+ * hari berikutnya (mis. wakom2 02:30-02:40 → 26:30-26:40). Lintas tengah
+ * malam pada window itu sendiri (mis. istirahat 23:00-00:30) juga ditangani.
+ */
+function windowToMinuteRange(w: BreakWindow, time: TimeOfDay): { startMin: number; endMin: number } {
+  let startMin = hmToMinutes(w.mulai);
+  let endMin = hmToMinutes(w.selesai);
+  if (time === "Night") {
+    if (startMin < 12 * 60) startMin += 24 * 60;
+    if (endMin < 12 * 60) endMin += 24 * 60;
+  }
+  if (endMin <= startMin) endMin += 24 * 60;
+  return { startMin, endMin };
+}
 
 /** Gabungkan "YYYY-MM-DD" + "HH:mm" menjadi Date lokal. */
 export function toDate(tanggal: string, jam: string): Date {
@@ -77,16 +114,19 @@ function lineStopToRange(
 export type ShiftInput = Pick<EntryInput, "tanggal" | "jamMulai" | "jamSelesai" | "time">;
 
 /**
- * Hitung rentang shift (termasuk lintas hari) & window istirahat baku mentah.
+ * Hitung rentang shift (termasuk lintas hari) & semua window jeda baku
+ * (istirahat + wakom) mentah, dari konfigurasi yang bisa diubah user.
  * Dipakai bersama oleh computeMetrics & computeTimeline agar aturan
- * cross-day dan window istirahat punya satu sumber kebenaran.
+ * cross-day dan window jeda punya satu sumber kebenaran.
  */
-function computeShiftRange(input: ShiftInput): {
+function computeShiftRange(
+  input: ShiftInput,
+  config: BreakConfig
+): {
   start: Date;
   end: Date;
   lintasHari: boolean;
-  breakStart: Date;
-  breakEnd: Date;
+  breakRanges: { key: BreakKey; start: Date; end: Date }[];
 } {
   const start = toDate(input.tanggal, input.jamMulai);
   let end = toDate(input.tanggal, input.jamSelesai);
@@ -98,13 +138,18 @@ function computeShiftRange(input: ShiftInput): {
     lintasHari = true;
   }
 
-  // Window istirahat diukur relatif terhadap tanggal mulai (tengah malam).
+  // Window jeda diukur relatif terhadap tanggal mulai (tengah malam).
   const midnight = toDate(input.tanggal, "00:00");
-  const win = BREAK_WINDOW[input.time];
-  const breakStart = new Date(midnight.getTime() + win.startMin * 60000);
-  const breakEnd = new Date(midnight.getTime() + win.endMin * 60000);
+  const breakRanges = (Object.keys(config) as BreakKey[]).map((key) => {
+    const { startMin, endMin } = windowToMinuteRange(config[key][input.time], input.time);
+    return {
+      key,
+      start: new Date(midnight.getTime() + startMin * 60000),
+      end: new Date(midnight.getTime() + endMin * 60000),
+    };
+  });
 
-  return { start, end, lintasHari, breakStart, breakEnd };
+  return { start, end, lintasHari, breakRanges };
 }
 
 /** Bulatkan ke maksimal `d` desimal tanpa jejak nol. */
@@ -115,9 +160,12 @@ export function round(n: number, d = 2): number {
 
 /**
  * Hitung semua metrik turunan dari input.
- * Menangani pengurangan istirahat & shift lintas hari (night 20:00 → 05:00).
+ * Menangani pengurangan istirahat/wakom & shift lintas hari (night 20:00 → 05:00).
  */
-export function computeMetrics(input: EntryInput): Metrics {
+export function computeMetrics(
+  input: EntryInput,
+  breakConfig: BreakConfig = DEFAULT_BREAK_CONFIG
+): Metrics {
   const typeA = Math.max(0, Number(input.typeA) || 0);
   const typeB = Math.max(0, Number(input.typeB) || 0);
 
@@ -142,14 +190,14 @@ export function computeMetrics(input: EntryInput): Metrics {
     };
   }
 
-  const { start, end, lintasHari, breakStart, breakEnd } = computeShiftRange(input);
+  const { start, end, lintasHari, breakRanges } = computeShiftRange(input, breakConfig);
 
   const durasiKotor = Math.max(0, differenceInMinutes(end, start));
 
-  const breakOverlap = rangesOverlap(start, end, breakStart, breakEnd);
-  const potonganIstirahat = breakOverlap
-    ? differenceInMinutes(breakOverlap.end, breakOverlap.start)
-    : 0;
+  const breakOverlaps = breakRanges
+    .map((r) => rangesOverlap(start, end, r.start, r.end))
+    .filter((r): r is { start: Date; end: Date } => r !== null);
+  const potonganIstirahat = mergeAndSumMinutes(breakOverlaps);
 
   const lineStopOverlaps = (input.lineStops ?? [])
     .filter((ls) => ls.mulai && ls.selesai)
@@ -157,10 +205,8 @@ export function computeMetrics(input: EntryInput): Metrics {
     .map((r) => rangesOverlap(start, end, r.start, r.end))
     .filter((r): r is { start: Date; end: Date } => r !== null);
 
-  const totalPotongan = mergeAndSumMinutes(
-    breakOverlap ? [breakOverlap, ...lineStopOverlaps] : lineStopOverlaps
-  );
-  // Selisih total (setelah digabung, tanpa dobel hitung irisan dgn istirahat).
+  const totalPotongan = mergeAndSumMinutes([...breakOverlaps, ...lineStopOverlaps]);
+  // Selisih total (setelah digabung, tanpa dobel hitung irisan dgn istirahat/wakom).
   const potonganLineStop = Math.max(0, totalPotongan - potonganIstirahat);
 
   const durasiEfektif = Math.max(0, durasiKotor - totalPotongan);
@@ -185,18 +231,40 @@ export function computeMetrics(input: EntryInput): Metrics {
 export interface TimelineData {
   start: Date;
   end: Date;
-  /** Rentang waktu istirahat yang benar-benar beririsan dengan jam kerja. */
-  breakOverlap: { start: Date; end: Date } | null;
+  /** Rentang waktu istirahat/wakom yang benar-benar beririsan dengan jam kerja. */
+  breakOverlaps: { key: BreakKey; start: Date; end: Date }[];
+  /** Rentang waktu line stop yang beririsan dengan jam kerja (jeda selain istirahat/wakom baku). */
+  lineStopOverlaps: { start: Date; end: Date; keterangan: string }[];
 }
 
 /**
- * Hitung rentang shift & irisan jam istirahat untuk visualisasi timeline.
- * Return null bila tanggal/jam belum lengkap.
+ * Hitung rentang shift, irisan jam istirahat/wakom, & irisan line stop untuk
+ * visualisasi timeline. Return null bila tanggal/jam belum lengkap.
  */
-export function computeTimeline(input: ShiftInput): TimelineData | null {
+export function computeTimeline(
+  input: ShiftInput & Pick<EntryInput, "lineStops">,
+  breakConfig: BreakConfig = DEFAULT_BREAK_CONFIG
+): TimelineData | null {
   if (!input.tanggal || !input.jamMulai || !input.jamSelesai) return null;
-  const { start, end, breakStart, breakEnd } = computeShiftRange(input);
-  return { start, end, breakOverlap: rangesOverlap(start, end, breakStart, breakEnd) };
+  const { start, end, breakRanges } = computeShiftRange(input, breakConfig);
+
+  const breakOverlaps = breakRanges
+    .map((r) => {
+      const overlap = rangesOverlap(start, end, r.start, r.end);
+      return overlap ? { key: r.key, ...overlap } : null;
+    })
+    .filter((r): r is { key: BreakKey; start: Date; end: Date } => r !== null);
+
+  const lineStopOverlaps = (input.lineStops ?? [])
+    .filter((ls) => ls.mulai && ls.selesai)
+    .map((ls) => ({ range: lineStopToRange(input.tanggal, ls, start), keterangan: ls.keterangan }))
+    .map(({ range, keterangan }) => {
+      const overlap = rangesOverlap(start, end, range.start, range.end);
+      return overlap ? { ...overlap, keterangan } : null;
+    })
+    .filter((r): r is { start: Date; end: Date; keterangan: string } => r !== null);
+
+  return { start, end, breakOverlaps, lineStopOverlaps };
 }
 
 export interface LineStopRow {
