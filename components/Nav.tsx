@@ -90,8 +90,8 @@ export default function Nav() {
           <button
             type="button"
             onClick={handleAuthClick}
-            title={role === "Supervisor" ? "Keluar dari mode Supervisor" : "Login Supervisor"}
-            aria-label={role === "Supervisor" ? "Keluar dari mode Supervisor" : "Login Supervisor"}
+            title={role === "Supervisor" ? "Keluar dari mode Leader" : "Login Leader"}
+            aria-label={role === "Supervisor" ? "Keluar dari mode Leader" : "Login Leader"}
             className={`ml-auto grid size-10 place-items-center rounded-xl border transition ${
               role === "Supervisor"
                 ? "border-brand-strong bg-brand text-brand-contrast"

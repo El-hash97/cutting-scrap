@@ -54,7 +54,7 @@ export default function LoginDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-4 text-base font-bold text-foreground">
-          Login Supervisor
+          Login Leader
         </h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Field label="Username" htmlFor="login-username">
